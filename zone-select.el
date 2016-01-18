@@ -1,9 +1,13 @@
 ;;; zone-select.el --- Select zone programs.
 
-;; Copyright (C) 2016 KAWABATA, Taichi
-
-;; Author: KAWABATA, Taichi <kawabata.taichi@gmail.com>
+;; Filename: zone-select.el
+;; Description: Select zone programs.
+;; Author: KAWABATA, Taichi <kawabata.taichi_at_gmail.com>
+;; Created: 2016-01-02
+;; Version: 1.160116
+;; Package-Requires: ((emacs "24.3") (dash "2.8"))
 ;; Keywords: games
+;; URL: https://github.com/kawabata/zone-select
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -27,6 +31,7 @@
 (eval-when-compile (require 'cl))
 (require 'zone)
 (require 'tabulated-list)
+(require 'dash)
 
 (defgroup zone-select nil
   "Zone Select"
@@ -34,9 +39,9 @@
   :group 'games)
 
 (defcustom zone-select-programs
-  (if (locate-library "zone.el")
+  (-if-let (zone-el (locate-library "zone.el"))
       (with-temp-buffer
-        (insert-file-contents (locate-library "zone.el"))
+        (insert-file-contents zone-el)
         (search-forward "(defvar zone-programs ")
         (read (current-buffer)))
     (copy-sequence zone-programs))
@@ -84,25 +89,34 @@
       (goto-char (point-min))
       (switch-to-buffer buf))))
 
+(defmacro zone-select-with-programs-as-list (&rest body)
+  "Execute BODY as if `zone-select-programs' is a list.
+It automatically kills *Zone Select* buffer."
+  `(progn
+     (callf2 mapcar 'identity zone-select-programs)
+     (callf2 mapcar 'identity zone-programs)
+     ,@body
+     (callf2 apply 'vector zone-select-programs)
+     (callf2 apply 'vector zone-programs)
+     (-when-let (buf (get-buffer "*Zone Select*"))
+       (kill-buffer buf))))
+
+;;;###autoload
 (defun zone-select-add-program (program)
   "Add PROGRAM to zone selections."
-  (if (not (functionp program))
-      (error "Zone program %s is not loaded" program))
-  (callf2 mapcar 'identity zone-select-programs)
-  (add-to-list 'zone-select-programs program)
-  (callf2 apply 'vector zone-select-programs)
-  (let ((buf (get-buffer "*Zone Select*")))
-    (if buf (kill-buffer "*Zone Select*"))))
+  (zone-select-with-programs-as-list
+   (if (not (functionp program))
+       (error "Zone program %s is not loaded" program))
+   (add-to-list 'zone-select-programs program)
+   (add-to-list 'zone-programs program)))
 
 (defun zone-select-remove-program (program)
   "Remove PROGRAM to zone selections."
-  (callf2 mapcar 'identity zone-select-programs)
-  (if (not (memq program zone-select-programs))
-      (error "Zone program %s does not exist" program))
-  (callf2 remove program zone-select-programs)
-  (callf2 apply 'vector zone-select-programs)
-  (let ((buf (get-buffer "*Zone Select*")))
-    (if buf (kill-buffer "*Zone Select*"))))
+  (zone-select-with-programs-as-list
+   (if (not (memq program zone-select-programs))
+       (error "Zone program %s does not exist" program))
+   (callf2 remove program zone-select-programs)
+   (callf2 remove program zone-programs)))
 
 (defun zone-select-tag (tag num)
   "Select TAG for NUM times."
@@ -120,7 +134,7 @@
   (interactive)
   (save-excursion
     (goto-char (point-min))
-    (zone-select-tag "I" 100)))
+    (zone-select-tag "I" (length zone-select-programs))))
 
 (defun zone-select-unmark (&optional arg)
   "Unmark zone program with prefix ARG."
@@ -132,13 +146,14 @@
   (interactive)
   (save-excursion
     (goto-char (point-min))
-    (zone-select-tag " " 100)))
+    (zone-select-tag " " (length zone-select-programs))))
 
 (defun zone-select-view ()
   "View zone program."
   (interactive)
-  (let ((zone-programs (vector (tabulated-list-get-id))))
-    (zone)))
+  (-when-let (zone-program (tabulated-list-get-id))
+    (let* ((zone-programs (vector zone-program)))
+      (zone))))
 
 (defun zone-select-execute ()
   "Execute zone selection."
@@ -153,4 +168,9 @@
             (apply 'vector (nreverse pgms))))))
 
 (provide 'zone-select)
+
 ;;; zone-select.el ends here
+
+;; Local Variables:
+;; time-stamp-pattern: "10/Version:\\\\?[ \t]+1.%02y%02m%02d\\\\?\n"
+;; End:
